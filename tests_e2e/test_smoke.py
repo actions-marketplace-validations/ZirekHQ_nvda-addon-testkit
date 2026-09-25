@@ -37,5 +37,25 @@ def test_config_round_trips_through_a_real_nvda(nvda):
 
 
 def test_startup_produced_no_errors(nvda, assert_no_unexpected_errors):
-    nvda.restart()
+    nvda.restart_harness()
     assert_no_unexpected_errors(nvda)
+
+
+def test_restart_nvda_exercises_core_restart(require_eval, nvda, assert_no_unexpected_errors):
+    old_pid = nvda.process.handshake.pid
+    nvda.restart_nvda(timeout=60)
+    assert nvda.process.handshake.pid != old_pid
+    assert_no_unexpected_errors(nvda)
+
+
+def test_simulate_modal_closes_a_real_dialog(require_eval, nvda):
+    # tag::modal[]
+    nvda.exec_nowait(
+        "import wx\n"
+        "dlg = wx.MessageDialog(None, 'confirm?', 'confirm?', wx.YES_NO)\n"
+        "dlg.ShowModal()\n"
+        "dlg.Destroy()\n"
+    )
+    assert nvda.simulate_modal("enter", timeout=10)
+    # end::modal[]
+    nvda.wait_until_idle(timeout=15)

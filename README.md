@@ -17,6 +17,15 @@ def test_my_addon_announces_itself(nvda, addon_under_test):
     nvda.log.assert_no_errors()
 ```
 
+The same test reads as plain steps with the (experimental) DSL:
+
+```python
+def test_my_addon_announces_itself(nvda, addon_under_test):
+    nvda.press("NVDA+shift+m")
+    nvda.should_hear("my add-on is ready")
+    nvda.should_have_no_errors()
+```
+
 ## Install
 
 ```bash
@@ -67,6 +76,25 @@ still on Extended Security Updates).
 | `nvda.log` | structured log records, and `assert_no_errors()` |
 | `nvda.addons` | two-phase install, remove, and state |
 
+`nvda.eval()` runs a single expression inside NVDA; `nvda.exec()` runs a
+full multi-statement scenario and returns whatever it binds to
+`__result__`. Both need `--nvda-allow-eval`. A bad scenario raises
+`ScenarioSyntaxError`, so catching bare `except Exception: pass` around
+either call still swallows it — catch the types you expect instead.
+
+`nvda.restart_harness()` kills and relaunches the NVDA process — use it to
+finish a two-phase add-on install or reset to a clean process. It does not
+exercise NVDA's own restart logic. For that, use `nvda.restart_nvda()`,
+which triggers NVDA's real `core.restart()` and waits for the replacement
+process — needs `--nvda-allow-eval`, since it is built on `nvda.eval()`.
+
+A real `wx.Dialog.ShowModal()` never returns control to any of the above —
+NVDA's main-thread queue doesn't drain while one is up. Open it with
+`nvda.exec_nowait()` instead of `exec()` (queues the scenario without
+waiting for it to finish), then close it with `nvda.simulate_modal(gesture,
+timeout=10.0)`, which sends real injected keyboard input once our process
+takes the foreground.
+
 ## Requirements
 
 Windows to run the tests. NVDA is downloaded automatically — you do not need
@@ -99,4 +127,4 @@ If this repository saves you time and effort, please consider supporting it!
 
 - ⭐ [Star on GitHub](https://github.com/ZirekHQ/nvda-addon-testkit)
 - 🐦 [Share on Twitter](https://twitter.com/intent/tweet?text=nvda-addon-testkit%20-%20real%20end-to-end%20testing%20for%20NVDA%20add-ons&url=https%3A%2F%2Fgithub.com%2FZirekHQ%2Fnvda-addon-testkit)
-- 💖 [More ways to support](https://github.com/ZirekHQ) — Open Collective coming soon
+- 💖 [Support on Open Collective](https://opencollective.com/zirek)

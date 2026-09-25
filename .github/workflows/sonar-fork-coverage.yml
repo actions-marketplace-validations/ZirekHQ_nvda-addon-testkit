@@ -38,14 +38,14 @@ jobs:
       contents: read
     if: github.event.pull_request.head.repo.full_name != github.repository
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - run: 'pip install --only-binary :all: -e ".[dev]"'
       - run: python tools/build_spy.py
@@ -60,7 +60,7 @@ jobs:
         # def/class line in them as uncovered. Mirrors sonar.yml.
         run: coverage run -m pytest -v
 
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sonar-fork-windows-coverage
           path: .coverage.windows.*
@@ -77,7 +77,7 @@ jobs:
     # Same-repo PRs are scanned directly by sonar.yml; only forks need this.
     if: github.event.pull_request.head.repo.full_name != github.repository
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Pinned to the actual PR head, not actions/checkout's default
           # ephemeral merge commit -- otherwise the scanner analyzes a
@@ -88,9 +88,9 @@ jobs:
           fetch-depth: 0 # Sonar needs full history for new-code detection and blame
           persist-credentials: false
 
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - run: 'pip install --only-binary :all: -e ".[dev]"'
       - run: python tools/build_spy.py
@@ -101,7 +101,7 @@ jobs:
       # After the run above, never before: `coverage run` erases any
       # .coverage.* data files already sitting in the workspace.
       - name: Download the Windows leg's coverage
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: sonar-fork-windows-coverage
 
@@ -113,7 +113,7 @@ jobs:
       - name: Archive workspace for the manual scan workflow
         run: tar -czf "$RUNNER_TEMP/workspace.tar.gz" -C "$GITHUB_WORKSPACE" .
 
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sonar-fork-workspace
           path: ${{ runner.temp }}/workspace.tar.gz
