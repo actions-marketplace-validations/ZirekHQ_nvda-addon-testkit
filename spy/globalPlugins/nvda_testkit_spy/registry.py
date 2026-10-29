@@ -4,13 +4,16 @@
 Runs inside NVDA's bundled Python. Standard library only.
 """
 
+from __future__ import annotations
+
 import hmac
 import traceback
+from typing import Any, Callable
 
-METHODS = {}
+METHODS: dict[str, Callable[..., Any]] = {}
 
 
-def rpc_method(fn):
+def rpc_method[F: Callable[..., Any]](fn: F) -> F:
     """Register `fn` as callable over XML-RPC under its own name."""
     METHODS[fn.__name__] = fn
     return fn
@@ -19,18 +22,18 @@ def rpc_method(fn):
 class Dispatcher:
     """SimpleXMLRPCServer instance whose every method takes the token first.
 
-    Faults are raised as plain exceptions; SimpleXMLRPCServer turns them into
-    Faults whose faultString is "<Type>: <message>". The host matches on the
-    "AUTH:" prefix, so those two strings are a wire contract -- do not reword
-    them without changing rpcclient.py. The "<TypeName>: <message>" shape of
-    that faultString is part of the same contract: rpcclient.py reads the type
-    name back out of it to recognise a SyntaxError as ScenarioSyntaxError.
+    Token failures raise PermissionError, which SimpleXMLRPCServer turns into a
+    Fault whose faultString starts "<class 'PermissionError'>:"; rpcclient.py
+    maps that to AuthError. Handler exceptions are wrapped in a RuntimeError
+    whose message starts "<TypeName>: ", and rpcclient.py reads that inner type
+    to recognise a SyntaxError as ScenarioSyntaxError. Both shapes are a wire
+    contract: do not change them without changing rpcclient.py.
     """
 
-    def __init__(self, token):
+    def __init__(self, token: str) -> None:
         self._token = token
 
-    def _dispatch(self, method, params):
+    def _dispatch(self, method: str, params: tuple[Any, ...]) -> Any:
         handler = METHODS.get(method)
         if handler is None:
             raise LookupError("UNKNOWN: no such method %r" % (method,))

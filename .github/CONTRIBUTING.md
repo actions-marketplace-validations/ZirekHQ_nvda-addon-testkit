@@ -22,7 +22,7 @@ python tools/build_spy.py
 ## Running tests
 
 ```bash
-pytest                       # host and spy unit tests -- any platform
+pytest -n auto                # host and spy unit tests -- any platform, parallel
 pytest tests_e2e/ -v         # real NVDA -- Windows only
 nvda-testkit doctor          # check this machine
 ```
@@ -33,7 +33,7 @@ nvda-testkit doctor          # check this machine
 | `tests_spy/` | `spy/`, the in-NVDA agent, against stubbed NVDA modules (`tests_spy/nvda_stubs.py`) | Linux + Windows |
 | `tests_e2e/` | both halves together, against a real provisioned NVDA | Windows only |
 
-`tests_e2e/` tests run serially — only one NVDA can own a desktop session, so `pytest-xdist` with more than one worker refuses to start rather than silently corrupting results.
+`tests_e2e/` tests run serially — only one NVDA can own a desktop session, so a test that drives NVDA under `pytest-xdist` with more than one worker fails with a provisioning error rather than silently corrupting results.
 
 ## Linting
 
@@ -54,10 +54,12 @@ Use the pull request template. Link the issue with `Closes #N` in the PR body wh
 
 Releases are tag-driven, not version-bumped by hand — `pyproject.toml` has no `version` field. The `hatch-vcs` build hook derives the package version from the git tag at build time.
 
-1. Run `prepare-release.yml` (Actions tab → **Prepare release** → Run workflow). Leave `new_tag` blank to let it compute the next version from Conventional Commit subjects since the last tag (`scripts/next-version.sh`); pass a `vX.Y.Z` value there instead to override it. Check `dry_run` to only see the computed version without tagging or publishing anything.
+1. Run `prepare-release.yaml` (Actions tab → **Prepare release** → Run workflow). Leave `new_tag` blank to let it compute the next version from Conventional Commit subjects since the last tag (`scripts/next-version.sh`); pass a `vX.Y.Z` value there instead to override it. Check `dry_run` to only see the computed version without tagging or publishing anything.
 2. The `release` environment gate requires a maintainer approval before anything happens — that's the human checkpoint, not the version computation.
-3. Once approved, `prepare-release.yml`'s `tag-and-release` job tags `main` at the resolved commit, force-moves the `v<major>` tag consumers pin (README and GitHub Marketplace listings use `@v1`), and publishes the GitHub Release with auto-generated notes.
-4. That tag feeds `publish-python.yml`, which builds the sdist/wheel and uploads to PyPI via Trusted Publishing — no token to rotate.
+3. Once approved, `prepare-release.yaml`'s `tag-and-release` job tags `main` at the resolved commit, force-moves the `v<major>` tag consumers pin (README and GitHub Marketplace listings use `@v<major>`), and publishes the GitHub Release with auto-generated notes.
+4. That tag feeds `publish-python.yaml`, which builds the sdist/wheel and uploads to PyPI via Trusted Publishing — no token to rotate.
+
+If the PyPI upload fails after the GitHub Release already went out, retry it without re-tagging: Actions tab → **Publish Python** → Run workflow from `main`, with `tag` set to the existing `vX.Y.Z` tag. It builds that tag, not the branch you dispatch from, and waits on the same `release` environment approval.
 
 ### Why not fully automate this (conventional commits + semantic-release)?
 

@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_CACHE_DIR: .uv-cache
+  UV_LINK_MODE: copy
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.14"
+      - run: "pip install --only-binary :all: uv==0.13.0"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.14"
+      - run: "pip install --only-binary :all: uv==0.13.0"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync python tools/build_spy.py
+      - run: uv run --no-sync mypy
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.14"
+      - run: "pip install --only-binary :all: uv==0.13.0"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync pip-audit
+
+  unit:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: "pip install --only-binary :all: uv==0.13.0"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync python tools/build_spy.py
+      # Bare `pytest` so testpaths picks up tests_spy/ too. An explicit
+      # `pytest tests/` silently skips every spy test in CI.
+      # `-n auto` is unit-only: the e2e plugin refuses more than one worker.
+      - run: uv run --no-sync pytest -v -n auto
+
+  e2e:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows-2022 covers Windows 10 22H2 (ESU). Drop it once ESU
+        # coverage is no longer needed.
+        os: [windows-2025, windows-2022]
+        channel: [stable, alpha]
+    continue-on-error: ${{ matrix.channel == 'alpha' }}
+    env:
+      NVDA_TESTKIT_CACHE: ${{ github.workspace }}/.nvda-launcher-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.14"
+      - run: "pip install --only-binary :all: uv==0.13.0"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync python tools/build_spy.py
+      - name: Cache NVDA launchers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .nvda-launcher-cache
+          key: nvda-launcher-${{ matrix.os }}-${{ matrix.channel }}-${{ github.run_id }}
+          restore-keys: nvda-launcher-${{ matrix.os }}-${{ matrix.channel }}-
+      - run: uv run --no-sync nvda-testkit doctor
+      - run: uv run --no-sync pytest tests_e2e/ -v --nvda-channel=${{ matrix.channel }}
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-${{ matrix.os }}-${{ matrix.channel }}-artifacts
+          path: testOutput/
+          if-no-files-found: warn
+
+  # Single required check for branch protection: matrix cell names change, this one does not.
+  # continue-on-error alpha legs report success, so they never gate this.
+  ci-ok:
+    if: always()
+    needs: [lint, typecheck, dependency-audit, unit, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*|*" skipped "*) echo "::error::CI failed: $RESULTS"; exit 1 ;;
+          esac

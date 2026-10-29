@@ -12,6 +12,7 @@ package under test cannot make the double lie.
 from __future__ import annotations
 
 import builtins
+import copy
 import hmac
 import json
 import os
@@ -25,6 +26,7 @@ from pathlib import Path
 from xmlrpc.server import SimpleXMLRPCServer
 
 HANDSHAKE_FILENAME = "testkit-handshake.json"
+NO_HANDSHAKE_MARKER = "fake-nvda-skipped-handshake"
 ADDONS_STATE_FILENAME = "testkit-addons.json"
 
 _SCALARS = (str, int, float, bool, type(None))
@@ -106,10 +108,13 @@ class FakeSpy:
         if handler is None:
             raise Exception(f"UNKNOWN: no such method {method!r}")
         if not params or not isinstance(params[0], str):
-            raise Exception("AUTH: first argument must be the session token")
+            raise PermissionError("AUTH: first argument must be the session token")
         if not hmac.compare_digest(params[0], self._token):
-            raise Exception("AUTH: token rejected; is a stale NVDA still running?")
-        return handler(*params[1:])
+            raise PermissionError("AUTH: token rejected; is a stale NVDA still running?")
+        try:
+            return handler(*params[1:])
+        except Exception as error:
+            raise RuntimeError(f"{type(error).__name__}: {error}") from error
 
     def rpc_ping(self):
         return "pong"
@@ -212,16 +217,12 @@ class FakeSpy:
         return True
 
     def rpc_config_snapshot(self):
-        import copy as _copy
-
         with self._lock:
-            return _copy.deepcopy(self._config)
+            return copy.deepcopy(self._config)
 
     def rpc_config_restore(self, snapshot):
-        import copy as _copy
-
         with self._lock:
-            self._config = _copy.deepcopy(snapshot)
+            self._config = copy.deepcopy(snapshot)
         return True
 
     def rpc_log_index(self):
@@ -342,6 +343,8 @@ def _serve() -> int:
             payload = {
                 "port": port,
                 "pid": os.getpid(),
+                "protocolVersion": 1,
+                "token": token,
                 "nvdaVersion": script.get("nvda_version", "2026.1.1"),
                 "apiVersion": script.get("api_version", "2026.1.1"),
                 "apiCompatTo": script.get("api_compat_to", "2026.1.0"),
@@ -351,6 +354,11 @@ def _serve() -> int:
         temporary = directory / (HANDSHAKE_FILENAME + ".part")
         temporary.write_text(json.dumps(payload), encoding="utf-8")
         os.replace(temporary, directory / HANDSHAKE_FILENAME)
+
+    else:
+        directory = Path(out_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / NO_HANDSHAKE_MARKER).write_text("", encoding="utf-8")
 
     spy.stop_requested.wait()
     server.shutdown()

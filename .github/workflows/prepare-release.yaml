@@ -7,7 +7,7 @@ name: Prepare release
 # tag-and-release and pypi live here rather than in a separate workflow_call file: PyPI's
 # trusted-publisher attestation check verifies the Build Config URI against the *root*
 # dispatched workflow, not the immediate caller, so a second layer of workflow_call between
-# this dispatch and publish-python.yml breaks it (confirmed by three failed release runs
+# this dispatch and publish-python.yaml breaks it (confirmed by three failed release runs
 # where the Build Config URI reported the wrong workflow entirely).
 on:
   workflow_dispatch:
@@ -24,12 +24,18 @@ on:
 
 permissions: {}
 
+# Two overlapping releases race on tag creation and the force-moved major tag.
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
 jobs:
   compute-version:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: read # needed to read CI's conclusion for the resolved commit
     outputs:
       version: ${{ steps.next.outputs.version }}
       sha: ${{ steps.resolve-sha.outputs.sha }}
@@ -46,6 +52,19 @@ jobs:
       - name: Resolve commit SHA
         id: resolve-sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Require green CI on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.resolve-sha.outputs.sha }}
+        run: |
+          set -euo pipefail
+          conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/CI.yaml/runs?head_sha=${SHA}&event=push&per_page=1" \
+            --jq '.workflow_runs[0].conclusion // "none"')"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::CI on ${SHA} is '${conclusion}', not 'success' -- refusing to release" >&2
+            exit 1
+          fi
 
       - name: Compute next version
         id: next
@@ -121,7 +140,7 @@ jobs:
             exit 1
           fi
 
-      # README documents `uses: zirekhq/nvda-addon-testkit@v1`, and GitHub Marketplace
+      # README documents `uses: zirekhq/nvda-addon-testkit@v<major>`, and GitHub Marketplace
       # consumers pin the same tag -- this step keeps it on the latest release in its major line.
       - name: Move major version tag
         run: |
@@ -149,6 +168,22 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: ./.github/workflows/publish-python.yml # zizmor: ignore[self-repository] low-severity style suggestion (use '$/...'), not a finding -- zizmor.yml doesn't pin a CLI version to confirm '$/' support
+    uses: ./.github/workflows/publish-python.yaml # zizmor: ignore[self-repository] low-severity style suggestion (use '$/...'), not a finding -- zizmor.yaml doesn't pin a CLI version to confirm '$/' support
     with:
       ref: v${{ needs.compute-version.outputs.version }}
+
+  announce:
+    name: Announce the release
+    needs: [compute-version, tag-and-release, pypi]
+    if: >-
+      ${{ !cancelled() && inputs.dry_run != true &&
+      needs.tag-and-release.result == 'success' && needs.pypi.result == 'success' }}
+    permissions: {}
+    uses: ZirekHQ/.github/.github/workflows/announce-release.yaml@aeeb653e77286d2bc445c6a34c0125acc6c60b6c # main
+    with:
+      tag: v${{ needs.compute-version.outputs.version }}
+    secrets:
+      MASTODON_INSTANCE_URL: ${{ secrets.MASTODON_INSTANCE_URL }}
+      MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+      BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+      BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}

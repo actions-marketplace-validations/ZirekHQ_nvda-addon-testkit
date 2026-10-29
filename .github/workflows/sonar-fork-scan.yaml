@@ -4,7 +4,7 @@ name: Sonar fork scan
 # implementation: SONAR_TOKEN is needed to post results, but no matter how
 # fork source reaches a job holding SONAR_TOKEN, that job must not execute
 # anything derived from the fork. A previous version of this workflow chained
-# automatically off sonar-fork-coverage.yml via workflow_run and used
+# automatically off sonar-fork-coverage.yaml via workflow_run and used
 # actions/checkout on the PR head -- actions/checkout itself refuses that
 # combination by default ("pwn request" protection), and a purpose-built
 # action for this exact problem (matrix-org/sonarcloud-workflow-action) was
@@ -22,7 +22,7 @@ name: Sonar fork scan
 # Unlike a plain checkout-and-build of the fork's code (e.g. a workflow that
 # checks out the fork head and runs its own build scripts in a job that holds
 # SONAR_TOKEN), this job still never executes anything derived from the fork:
-# it downloads the tar archive sonar-fork-coverage.yml built (test suite
+# it downloads the tar archive sonar-fork-coverage.yaml built (test suite
 # already executed there, safely, with no secrets) and extracts it with plain
 # `tar`, never a git operation against fork content. The scanner only reads
 # the result statically.
@@ -74,8 +74,8 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PR_NUMBER: ${{ github.event.issue.number }}
     steps:
-      # sonar-fork-coverage.yml only builds its workspace artifact for actual
-      # fork PRs -- same-repo PRs are already scanned by sonar.yml -- so a
+      # sonar-fork-coverage.yaml only builds its workspace artifact for actual
+      # fork PRs -- same-repo PRs are already scanned by sonar.yaml -- so a
       # /sonar comment on a same-repo PR must skip `scan` rather than fail on
       # a missing artifact.
       - name: Resolve whether the PR is a fork
@@ -114,13 +114,18 @@ jobs:
             --json headRefOid,headRefName \
             --jq '"head_sha=\(.headRefOid)\nhead_ref=\(.headRefName)"' \
             >> "$GITHUB_OUTPUT"
+          # head_ref is fork-controlled and lands in scanner args below.
+          if ! printf '%s' "$(grep '^head_ref=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)" | grep -qE '^[A-Za-z0-9._/-]+$'; then
+            echo "::error::PR head branch name has characters outside [A-Za-z0-9._/-]" >&2
+            exit 1
+          fi
 
       - name: Find the matching coverage run
         id: run
         env:
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
-          RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/sonar-fork-coverage.yml/runs?event=pull_request&status=success&head_sha=$HEAD_SHA&per_page=1" \
+          RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/sonar-fork-coverage.yaml/runs?event=pull_request&status=success&head_sha=$HEAD_SHA&per_page=1" \
             --jq '.workflow_runs[0].id')
           if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
             echo "::error::No successful 'Sonar fork coverage' run found for $HEAD_SHA. Push a commit or re-run that workflow first."
@@ -129,7 +134,7 @@ jobs:
           echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Download coverage workspace
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: sonar-fork-workspace
           path: ${{ runner.temp }}/sonar-fork-workspace
@@ -162,7 +167,7 @@ jobs:
       - name: SonarQube scan
         id: sonar
         if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3
         with:
           # The archive's sonar-project.properties came from the fork, so the
           # project identity and scan scope are pinned here explicitly --
@@ -172,7 +177,7 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io
             -Dsonar.projectKey=ZirekHQ_nvda-addon-testkit
             -Dsonar.organization=zirekhq
-            -Dsonar.sources=src/nvda_testkit,tools
+            -Dsonar.sources=src/nvda_testkit,spy,tools
             -Dsonar.tests=tests,tests_spy,tests_e2e
             -Dsonar.exclusions=src/nvda_testkit/_spy/**,tests/fixtures/**
             -Dsonar.python.version=3.13

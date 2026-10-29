@@ -4,6 +4,8 @@
 
 End-to-end testing for NVDA add-ons, against a real NVDA, in CI.
 
+Documentation: [docs/](docs/modules/ROOT/pages/index.adoc). Troubleshooting: [docs/modules/ROOT/pages/troubleshooting.adoc](docs/modules/ROOT/pages/troubleshooting.adoc). Security: [.github/SECURITY.md](.github/SECURITY.md). Release notes: [GitHub Releases](https://github.com/ZirekHQ/nvda-addon-testkit/releases).
+
 Your add-on's logic can be unit-tested with stubs. What cannot be stubbed is
 whether it installs, registers, and behaves inside NVDA itself. This kit
 provisions a disposable portable NVDA, installs your add-on into it, and lets
@@ -47,8 +49,8 @@ jobs:
   e2e:
     runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v5
-      - uses: zirekhq/nvda-addon-testkit@v1
+      - uses: actions/checkout@v7
+      - uses: zirekhq/nvda-addon-testkit@v2
         with:
           nvda-channel: stable
       - run: pytest tests_e2e/ -v
@@ -100,12 +102,16 @@ takes the foreground.
 Windows to run the tests. NVDA is downloaded automatically — you do not need
 one installed, and nothing touches an NVDA you already have.
 
+Version 2.x tests against NVDA 2026.1 and later. Use 1.x for NVDA 2024.1 to 2025.3; see
+[Compatibility](docs/modules/ROOT/pages/installation.adoc#_compatibility) for the NVDA and
+Python versions each release supports.
+
 Tests run serially: only one NVDA can own a desktop session, so pytest-xdist
 with more than one worker is refused rather than silently producing nonsense.
 
 ## Developing the kit itself
 
-The host side is fully testable on Linux against a scriptable double:
+See [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) for the full workflow. The host side is fully testable on Linux against a scriptable double:
 
 ```bash
 pip install -e ".[dev]"

@@ -12,6 +12,10 @@ concurrency:
   group: sonar-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  UV_CACHE_DIR: .uv-cache
+  UV_LINK_MODE: copy
+
 jobs:
   # windows_only-marked tests only run on Windows, so a ubuntu-only coverage
   # run would show them as permanently uncovered. This job measures that leg
@@ -29,17 +33,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Pinned to the actual PR head, not actions/checkout's default
-          # ephemeral merge commit -- matches sonar-fork-coverage.yml, so the
+          # ephemeral merge commit -- matches sonar-fork-coverage.yaml, so the
           # scanner analyzes the same revision on same-repo and fork PRs alike.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.14"
 
-      - run: 'pip install --only-binary :all: -e ".[dev]"'
-      - run: python tools/build_spy.py
+      - run: "pip install --only-binary :all: uv==0.13.0"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync python tools/build_spy.py
 
       - name: Run tests with coverage
         env:
@@ -49,9 +59,9 @@ jobs:
         # loader imports nvda_testkit's modules before pytest-cov's --cov
         # flag would start tracing, permanently miscounting every top-level
         # def/class line in them as uncovered.
-        run: coverage run -m pytest -v
+        run: uv run --no-sync coverage run -m pytest -v
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-coverage-data
           path: .coverage.windows.*
@@ -71,7 +81,7 @@ jobs:
     # empty and the scan would fail with a red X the contributor can't clear.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -81,35 +91,47 @@ jobs:
           fetch-depth: 0 # Sonar needs full history for new-code detection and blame
           persist-credentials: false
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.14"
 
-      - run: 'pip install --only-binary :all: -e ".[dev]"'
-      - run: python tools/build_spy.py
+      - run: "pip install --only-binary :all: uv==0.13.0"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync python tools/build_spy.py
 
       - name: Run tests with coverage
-        run: coverage run -m pytest -v
+        run: uv run --no-sync coverage run -m pytest -v
 
       # After the run above, never before: `coverage run` erases any
       # .coverage.* data files already sitting in the workspace.
       - name: Download the Windows leg's coverage
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: windows-coverage-data
 
       - name: Merge into one coverage report
         run: |
-          python -m coverage combine --append
-          python -m coverage xml
+          uv run --no-sync python -m coverage combine --append
+          uv run --no-sync python -m coverage xml
 
       - name: Upload coverage to GitHub Code Quality
-        uses: actions/upload-code-coverage@d8e329117199404bba6fc81efe8093dc7c015e34 # v1
+        uses: actions/upload-code-coverage@2b21a77928be8d5168c2b9581a67f2adbebacc52 # v1
         with:
           file: coverage.xml
           language: Python
           label: code-coverage/pytest
 
       - name: SonarQube scan
-        if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        if: env.HAS_SONAR_TOKEN == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3
+
+      # After the scan so a coverage drop still reaches Sonar before this fails the job.
+      - name: Enforce the coverage floor
+        run: uv run --no-sync python -m coverage report
